@@ -21,7 +21,6 @@ run: main
 main: main.o slogic.o usbutil.o log.o ezusb.o hexdump.o
 
 clean:
-	$(MAKE) -C firmware clean
 	rm -rf main .deps $(wildcard *.o *~)
 
 indent:
@@ -30,7 +29,6 @@ indent:
 sinclude .deps
 .deps: $(wildcard *.h)
 	$(CC) $(CFLAGS) $(CPPFLAGS) -MM *.c > .deps
-	$(MAKE) -C firmware .deps
 
 # Misc
 

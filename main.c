@@ -26,7 +26,7 @@ void short_usage(int argc, char **argv,const char *message, ...){
 
 	printf( "usage: %s -f <output file> -r <sample rate> [-n <number of samples>] [-h ] \n\n", argv[0]);
 	va_start(ap, message);
-	(void)vsnprintf(p, 1024, message, ap);
+	(void)vsnprintf(p, sizeof(p), message, ap);
 	va_end(ap);
 	printf( "Error: %s\n", p);
 }
@@ -89,9 +89,11 @@ char *endptr;
 				return false;
 			}
 			break;
+				
 		case 'h':
 			full_usage(argc,argv);
 			return false;
+				
 		case 'b':
 			handle->transfer_buffer_size = strtol(optarg, &endptr, 10);
 			if (*endptr != '\0' || handle->transfer_buffer_size <= 0) {
@@ -99,6 +101,8 @@ char *endptr;
 				return false;
 			}
 			break;
+			
+				
 		case 't':
 			handle->n_transfer_buffers = strtol(optarg, &endptr, 10);
 			if (*endptr != '\0' || handle->n_transfer_buffers <= 0) {
@@ -106,6 +110,7 @@ char *endptr;
 				return false;
 			}
 			break;
+				
 		case 'o':
 			handle->transfer_timeout = strtol(optarg, &endptr, 10);
 			if (*endptr != '\0' || handle->transfer_timeout <= 0) {
@@ -113,6 +118,7 @@ char *endptr;
 				return false;
 			}
 			break;
+				
 		case 'd':
 			current_log_level = strtol(optarg, &endptr, 10);
                         if (*endptr != '\0' || current_log_level < 0 || libusb_debug_level > 5) {
@@ -121,6 +127,7 @@ char *endptr;
                                 return false;
                         }
 			break;
+				
 		case 'u':
 			libusb_debug_level = strtol(optarg, &endptr, 10);
 			if (*endptr != '\0' || libusb_debug_level < 0 || libusb_debug_level > 3) {
@@ -130,6 +137,7 @@ char *endptr;
 			}
 			libusb_set_debug(handle->usb_context, libusb_debug_level);
 			break;
+				
 		default:
 		case '?':
 			short_usage(argc,argv,"Unknown argument: %c. Use %s -h for usage.", optopt, argv[0]);
@@ -180,7 +188,7 @@ int data_callback_write(struct slogic_ctx *handle, uint8_t * data, size_t size){
 struct callback_test *foo = handle->data_callback_opts;
 
 	//fixme, errors have to be handled here
-	return fwrite(data,1,size,foo->file);	
+	//return fwrite(data,1,size,foo->file);	
 }
 
 void data_callback_close(struct slogic_ctx *handle){
@@ -232,13 +240,12 @@ struct slogic_ctx *handle = NULL;
 		if (!slogic_is_firmware_uploaded(handle)) {
 			log_printf( INFO, "Uploading the firmware\n");
 			ezusb_upload_firmware(handle,1 ,handle->fwfile);
+			//libusb_reset_device(handle->dev);
 		}else{
 			handle->recording_state = INITALIZED;
 		}
 	}while(handle->recording_state != INITALIZED);
 
-	//libusb_reset_device(handle->device_handle);
-	
 	handle->transfer_buffer_size = libusb_get_max_packet_size (handle->dev, SALEAE_STREAMING_DATA_IN_ENDPOINT) * 8;
 
 	signal(SIGINT,&ctrl_c_handler);
@@ -253,7 +260,7 @@ struct slogic_ctx *handle = NULL;
 		perror("in callback open()");
 	}
 
-	slogic_set_capture(handle);
+	//slogic_set_capture(handle);
 	slogic_execute_recording(handle);
 	handle->data_callback_close(handle);
 

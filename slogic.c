@@ -74,10 +74,8 @@ struct slogic_ctx *handle;
 	handle->transfer_buffer_size = DEFAULT_TRANSFER_BUFFER_SIZE;
 	handle->n_transfer_buffers = DEFAULT_N_TRANSFER_BUFFERS;
 	handle->transfer_timeout = DEFAULT_TRANSFER_TIMEOUT;
-	libusb_init(&handle->usb_context);
-
-	handle->transfers = calloc(1,sizeof(struct logic_transfers) * handle->n_transfer_buffers);
-	
+	handle->transfer_timeout = 1000;
+	libusb_init(&handle->usb_context);	
 	return handle;
 }
 
@@ -139,6 +137,8 @@ struct libusb_device_descriptor descriptor;
 	}
 	libusb_free_device_list(list, 1);
 	handle->dev = libusb_get_device(handle->device_handle);
+	handle->transfers = calloc(1,sizeof(struct logic_transfers) * handle->n_transfer_buffers);
+
 	return 0;
 }
 
@@ -157,7 +157,7 @@ struct libusb_transfer *newtransfer;
 	buffer = malloc(handle->transfer_buffer_size);
 	assert(buffer);
 	newtransfer = libusb_alloc_transfer(0);
-	newtransfer->flags |= (LIBUSB_TRANSFER_FREE_BUFFER |  LIBUSB_TRANSFER_FREE_TRANSFER | LIBUSB_TRANSFER_SHORT_NOT_OK );
+	newtransfer->flags |= (LIBUSB_TRANSFER_FREE_BUFFER |  LIBUSB_TRANSFER_FREE_TRANSFER );
 	if (newtransfer == NULL) {
 		log_printf( ERR, "libusb_alloc_transfer failed\n");
 		handle->recording_state = UNKNOWN;
@@ -206,19 +206,23 @@ int slogic_spindown(struct slogic_ctx *handle){
 	return 1; //did i want to do something with this?
 }
 
+void dummy_callback(struct libusb_transfer *transfer){
+	printf("moof");
+}
+
 
 void slogic_read_samples_callback(struct libusb_transfer *transfer){
 struct logic_transfers *ltransfer = transfer->user_data;
 struct slogic_ctx *handle = ltransfer->logic_context;
-unsigned int transfer_id;
-	
 
 	switch(transfer->status){	
 		case LIBUSB_TRANSFER_COMPLETED :
 			handle->transfer_count--;
-			handle->transfers[transfer_id].seq = handle->transfer_counter++;
+			handle->transfers[ltransfer->transfer_id].seq = handle->transfer_counter++;
 			handle->n_samples_fulfilled += transfer->actual_length;
 			handle->data_callback_write(handle,transfer->buffer,transfer->actual_length);
+
+			
 			if(handle->n_samples_fulfilled < handle->n_samples_requested){
 				slogic_prime_data(handle, ltransfer->transfer_id);
 				slogic_pump_data(handle, ltransfer->transfer_id);
@@ -270,18 +274,44 @@ struct slogic_command command;
 int ret,transferred;
 	
 	transfer = libusb_alloc_transfer(0);
+
 	if (transfer == NULL) {
 		log_printf( ERR, "libusb_alloc_transfer failed\n");
 		handle->recording_state = UNKNOWN;
 		ret = 1;
 		return ret;
 	}
+
 	command.command = SALEAE_LOGIC_COMMAND_SET_SAMPLE_DELAY;
 	command.sample_delay = handle->sample_rate->sample_delay;	
-	if((ret = libusb_bulk_transfer(handle->device_handle, SALEAE_COMMAND_OUT_ENDPOINT, (unsigned char *)&command, sizeof(command), &transferred, 100))){
+
+	if((ret = libusb_bulk_transfer(handle->device_handle, SALEAE_COMMAND_OUT_ENDPOINT, (unsigned char *)&command, sizeof(command), &transferred, handle->transfer_timeout))){
 		log_printf( ERR, "libusb_bulk_transfer (in): %s\n", usbutil_error_to_string(ret));
 		return ret;
 	}
+	return 0;	
+	
+}
+
+int slogic_set_capture_async(struct slogic_ctx *handle){
+	struct libusb_transfer *transfer;
+	struct slogic_command command;	
+	int ret,transferred;
+	
+	transfer = libusb_alloc_transfer(0);
+	
+	if (transfer == NULL) {
+		log_printf( ERR, "libusb_alloc_transfer failed\n");
+		handle->recording_state = UNKNOWN;
+		ret = 1;
+		return ret;
+	}
+	
+	command.command = SALEAE_LOGIC_COMMAND_SET_SAMPLE_DELAY;
+	command.sample_delay = handle->sample_rate->sample_delay;	
+	
+	libusb_fill_bulk_transfer(transfer, handle->device_handle, SALEAE_COMMAND_OUT_ENDPOINT, (unsigned char *)&command, sizeof(command),dummy_callback,&transferred, handle->transfer_timeout);
+	libusb_submit_transfer(transfer);	
 	return 0;	
 	
 }
@@ -299,21 +329,20 @@ struct timeval timeout;
 	}
 		
 	handle->recording_state = RUNNING;
-
+//	slogic_set_capture(handle);
 	/* Submit all transfers */
+	slogic_set_capture_async(handle);
+
 	for (transfer_id = 0; transfer_id < handle->n_transfer_buffers; transfer_id++) {
+//		if(!transfer_id){
+//		}
 		slogic_pump_data(handle, transfer_id);
-		if((!(transfer_id%20))){
-			timeout.tv_usec = 0;
-			timeout.tv_sec = 0;
-			libusb_handle_events_timeout(handle->usb_context, &timeout);
-		}
 		handle->transfer_count++;
 	}
 
 
 	while (handle->recording_state == RUNNING) {		
-		timeout.tv_sec = 3;
+		timeout.tv_sec = 1;
 		if((ret = libusb_handle_events_timeout(handle->usb_context, &timeout))){
 			log_printf( ERR, "libusb_handle_events: %s\n", usbutil_error_to_string(ret));
 			break;
@@ -361,7 +390,6 @@ int ezusb_upload_firmware(struct slogic_ctx *handle, int configuration, const ch
 
         log_printf(DEBUG, "uploading firmware to device on %d.%d\n", libusb_get_bus_number(handle->dev), libusb_get_device_address(handle->dev));
                 
- 
         if ((ezusb_reset(handle->device_handle, 1)) < 0)
                 return 1;
   
