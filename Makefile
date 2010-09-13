@@ -18,10 +18,7 @@ all: main
 run: main
 	./main -f out.log -r 16MHz
 
-main: main.o slogic.o firmware/firmware.o usbutil.o log.o
-
-firmware/firmware.o:
-	$(MAKE) -C firmware firmware.o
+main: main.o slogic.o usbutil.o log.o ezusb.o hexdump.o
 
 clean:
 	$(MAKE) -C firmware clean
@@ -50,3 +47,4 @@ dist:
 		git archive --prefix=saleae-logic-libusb-$(VERSION)-$$date/ HEAD | gzip > ../saleae-logic-libusb-$(VERSION)-$$date.tar.gz
 
 .PHONY: dist all run
+	
