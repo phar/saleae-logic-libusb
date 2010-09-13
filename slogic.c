@@ -143,10 +143,10 @@ struct libusb_device_descriptor descriptor;
 }
 
 void slogic_close(struct slogic_ctx *handle){	
-	//TODO free() transfers
 	libusb_close(handle->device_handle);
-	//libusb_exit(handle->usb_context);
-	//free(handle);
+	libusb_exit(handle->usb_context);
+	free(handle->transfers);
+	free(handle);
 }
 
 
@@ -260,7 +260,6 @@ unsigned int transfer_id;
 			handle->recording_state = UNKNOWN;
 	}
 		
-	//libusb_free_transfer(transfer);
 }
 
 
@@ -290,7 +289,7 @@ int ret,transferred;
 
 int slogic_execute_recording(struct slogic_ctx *handle){
 int transfer_id,retval,ret;
-struct timeval timeot;	
+struct timeval timeout;	
 
 
 	handle->recording_state = WARMING_UP;
@@ -304,13 +303,18 @@ struct timeval timeot;
 	/* Submit all transfers */
 	for (transfer_id = 0; transfer_id < handle->n_transfer_buffers; transfer_id++) {
 		slogic_pump_data(handle, transfer_id);
+		if((!(transfer_id%20))){
+			timeout.tv_usec = 0;
+			timeout.tv_sec = 0;
+			libusb_handle_events_timeout(handle->usb_context, &timeout);
+		}
 		handle->transfer_count++;
 	}
 
 
 	while (handle->recording_state == RUNNING) {		
-		timeot.tv_sec = 3;
-		if((ret = libusb_handle_events_timeout(handle->usb_context, &timeot))){
+		timeout.tv_sec = 3;
+		if((ret = libusb_handle_events_timeout(handle->usb_context, &timeout))){
 			log_printf( ERR, "libusb_handle_events: %s\n", usbutil_error_to_string(ret));
 			break;
 		}

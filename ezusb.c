@@ -74,21 +74,3 @@ unsigned char buf[4096];
 	return result;
 }
 
-int ezusb_upload_firmware(struct slogic_ctx *handle, int configuration, const char *filename){
-int err;
-
-	log_printf(DEBUG, "uploading firmware to device on %d.%d\n", libusb_get_bus_number(handle->dev), libusb_get_device_address(handle->dev));
-
-
-	if ((ezusb_reset(handle->device_handle, 1)) < 0)
-		return 1;
-
-	if (ezusb_install_firmware(handle->device_handle, filename) != 0)
-		return 1;
-
-	if ((ezusb_reset(handle->device_handle, 0)) < 0)
-		return 1;
-
-
-	return 0;
-}

@@ -74,11 +74,11 @@ char *endptr;
 			}
 			break;
 
-		case 'f':
+		case 's':
 			handle->fwfile = optarg;
 			break;
 
-		case 's':
+		case 'f':
 			outputfilename = optarg;
 			break;
 
@@ -203,6 +203,7 @@ struct slogic_ctx *handle = NULL;
 	
 	do{
 		if(handle){
+			sleep(2);
 			slogic_close(handle); //we must be retrying for a reason..
 		}
 		handle = slogic_init();
@@ -215,7 +216,7 @@ struct slogic_ctx *handle = NULL;
 		handle->data_callback_close= data_callback_close;
 		
 		if (!handle) {
-			log_printf( INFO, "Failed initialise lib slogic\n");
+			log_printf( INFO, "Failed initialize logic\n");
 			exit(42);
 		}
 
@@ -235,14 +236,17 @@ struct slogic_ctx *handle = NULL;
 			handle->recording_state = INITALIZED;
 		}
 	}while(handle->recording_state != INITALIZED);
+
+	//libusb_reset_device(handle->device_handle);
 	
-	handle->transfer_buffer_size = libusb_get_max_iso_packet_size (handle->dev, SALEAE_STREAMING_DATA_IN_ENDPOINT) * 4;
+	handle->transfer_buffer_size = libusb_get_max_packet_size (handle->dev, SALEAE_STREAMING_DATA_IN_ENDPOINT) * 8;
 
 	signal(SIGINT,&ctrl_c_handler);
 	
 	log_printf( DEBUG, "Transfer buffers:     %d\n", handle->n_transfer_buffers);
 	log_printf( DEBUG, "Transfer buffer size: %zu\n", handle->transfer_buffer_size);
 	log_printf( DEBUG, "Transfer timeout:     %u\n", handle->transfer_timeout);
+	log_printf( DEBUG, "sample rate:     %u\n", handle->sample_rate->samples_per_second);
 	log_printf( INFO, "Begin Capture\n");
 
 	if(!handle->data_callback_open(handle,outputfilename)){

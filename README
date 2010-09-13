@@ -6,6 +6,28 @@ As I write this, the capture is working well at 8MHz on a 5,6 macbook pro... som
 12 mhz but this is extremely unreliable.. not sure if its me, libusb or the OS, but sigrok seems to have 
 the same problem.
 
+!!UPDATE!!
+  insomnia induced fixes seem to have done the trick, 
+
+albert:saleae-logic-libusb phar$ time ./main  -f foo -r 24MHz -n 2000000000 -d 3
+Begin Capture
+Capture Success!
+Capture finished with exit code 4
+Total number of samples requested: 2000000000
+Total number of samples read: 2000003072
+Total number of transfers: 488282
+
+real    2m19.315s
+user    0m11.082s
+sys    0m46.045s
+albert:saleae-logic-libusb phar$ ls -l foo
+-rw-r--r--  1 phar  staff  2000003072 Sep 13 03:23 foo
+
+Thats a sustained 24MHz capture for 2Gcaptures  on OSX which even the  saleae software wont do.
+
+
+
+
 unlike previous versions of this program, it does not have a hardcoded firmware blob and weird 
 USB capture replay foo.. and since i cannot provide saleae logic firmware under a GPL license 
 you will have to extract the firmware yourself... these directions will produce a functional fimrware
