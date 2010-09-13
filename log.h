@@ -7,20 +7,21 @@ extern "C" {
 /* *INDENT-ON* */
 #endif
 
-struct logger {
-	char *name;
-	int verbose;
-};
-
 enum log_level {
+	QUIET,
 	ERR,
-	WARNING,
-	NOTICE,
 	INFO,
+	NOTICE,
+	WARNING,
 	DEBUG
 };
 
-void log_printf(struct logger *logger, enum log_level level, const char *format, ...);
+
+extern int current_log_level;
+
+#define LOG_LINE_BUFFEER_SIZE	2048
+
+void log_printf(enum log_level level, const char *format, ...);
 
 #ifdef __cplusplus
 /* *INDENT-OFF* */
