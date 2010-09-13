@@ -2,7 +2,8 @@
 #include "slogic.h"
 #include "usbutil.h"
 #include "log.h"
-
+#include "main.h"
+#include "ezusb.h"
 #include <assert.h>
 #include <libusb.h>
 #include <stdarg.h>
@@ -11,217 +12,251 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 
 /* Command line arguments */
-struct slogic_sample_rate *sample_rate = NULL;
-const char *output_file_name = NULL;
-FILE *output_file;
-size_t n_samples = 0;
 
-const char *me = "main";
+int user_forced_shutdown = 0;
+char *outputfilename = "saleae_output.bin";
 
-static struct logger logger = {
-	.name = __FILE__,
-	.verbose = 0,
-};
 
-void short_usage(const char *message, ...)
-{
-	char p[1024];
+void short_usage(int argc, char **argv,const char *message, ...){
+	char p[1024]; //FIXME
 	va_list ap;
 
-	fprintf(stderr, "usage: %s -f <output file> -r <sample rate> [-n <number of samples>] [-h ] \n\n", me);
+	printf( "usage: %s -f <output file> -r <sample rate> [-n <number of samples>] [-h ] \n\n", argv[0]);
 	va_start(ap, message);
 	(void)vsnprintf(p, 1024, message, ap);
 	va_end(ap);
-	fprintf(stderr, "Error: %s\n", p);
+	printf( "Error: %s\n", p);
 }
 
-void full_usage()
-{
+void full_usage(int argc, char **argv){
 	const struct slogic_sample_rate *sample_iterator = slogic_get_sample_rates();
 
-	fprintf(stderr, "usage: %s -f <output file> -r <sample rate> [-n <number of samples>]\n", me);
-	fprintf(stderr, "\n");
-	fprintf(stderr, " -n: Number of samples to record\n");
-	fprintf(stderr, "     Defaults to one second of samples for the specified sample rate\n");
-	fprintf(stderr, " -f: The output file. Using '-' means that the bytes will be output to stdout.\n");
-	fprintf(stderr, " -h: This help message.\n");
-	fprintf(stderr, " -r: Select sample rate for the Logic.\n");
-	fprintf(stderr, "     Available sample rates:\n");
+	printf( "usage: %s -f <output file> -r <sample rate> [-n <number of samples>]\n", argv[0]);
+	printf( "\n");
+	printf( " -n: Number of samples to record\n");
+	printf( "     Defaults to one second of samples for the specified sample rate\n");
+	printf( " -f: The output file. Using '-' means that the bytes will be output to stdout.\n");
+	printf( " -h: This help message.\n");
+	printf( " -r: Select sample rate for the Logic.\n");
+	printf( "     Available sample rates:\n");
 	while (sample_iterator->text != NULL) {
-		fprintf(stderr, "      o %s\n", sample_iterator->text);
+		printf( "      o %s\n", sample_iterator->text);
 		sample_iterator++;
 	}
-	fprintf(stderr, "\n");
-	fprintf(stderr, "Advanced options:\n");
-	fprintf(stderr, " -b: Transfer buffer size.\n");
-	fprintf(stderr, " -t: Number of transfer buffers.\n");
-	fprintf(stderr, " -o: Transfer timeout.\n");
-	fprintf(stderr, " -u: libusb debug level: 0 to 3, 3 is most verbose. Defaults to '0'.\n");
-	fprintf(stderr, "\n");
+	printf( "\n");
+	printf( "Advanced options:\n");
+	printf( " -b: Transfer buffer size.\n");
+	printf( " -t: Number of transfer buffers.\n");
+	printf( " -o: Transfer timeout.\n");
+	printf( " -u: libusb debug level: 0 to 3, 3 is most verbose. Defaults to '0'.\n");
+	printf( " -d: log level: 0 to 5, 5 is most verbose. Defaults to '1'.\n");
+	printf( "\n");
 }
 
 /* Returns true if everything was OK */
-bool parse_args(int argc, char **argv, struct slogic_handle *handle)
-{
-	char c;
-	int libusb_debug_level = 0;
-	char *endptr;
+bool parse_args(int argc, char **argv, struct slogic_ctx *handle){
+char c;
+int libusb_debug_level = 0;
+char *endptr;
+	
+	optind = 1; //reset incase i need to reparse
 	/* TODO: Add a -d flag to turn on internal debugging */
-	while ((c = getopt(argc, argv, "n:f:r:hb:t:o:u:")) != -1) {
+	while ((c = getopt(argc, argv, "n:f:r:hb:t:o:u:d:s:")) != -1) {
 		switch (c) {
 		case 'n':
-			n_samples = strtol(optarg, &endptr, 10);
-			if (*endptr != '\0' || n_samples <= 0) {
-				short_usage("Invalid number of samples, must be a positive integer: %s", optarg);
+			handle->n_samples_requested = strtol(optarg, &endptr, 10);
+			if (*endptr != '\0' || handle->n_samples_requested <= 0) {
+				short_usage(argc,argv,"Invalid number of samples, must be a positive integer: %s", optarg);
 				return false;
 			}
 			break;
+
 		case 'f':
-			output_file_name = optarg;
+			handle->fwfile = optarg;
 			break;
+
+		case 's':
+			outputfilename = optarg;
+			break;
+
 		case 'r':
-			sample_rate = slogic_parse_sample_rate(optarg);
-			if (!sample_rate) {
-				short_usage("Invalid sample rate: %s", optarg);
+			handle->sample_rate = slogic_parse_sample_rate(optarg);
+			if (!handle->sample_rate) {
+				short_usage(argc,argv,"Invalid sample rate: %s", optarg);
 				return false;
 			}
 			break;
 		case 'h':
-			full_usage();
+			full_usage(argc,argv);
 			return false;
 		case 'b':
 			handle->transfer_buffer_size = strtol(optarg, &endptr, 10);
 			if (*endptr != '\0' || handle->transfer_buffer_size <= 0) {
-				short_usage("Invalid transfer buffer size, must be a positive integer: %s", optarg);
+				short_usage(argc,argv,"Invalid transfer buffer size, must be a positive integer: %s", optarg);
 				return false;
 			}
 			break;
 		case 't':
 			handle->n_transfer_buffers = strtol(optarg, &endptr, 10);
 			if (*endptr != '\0' || handle->n_transfer_buffers <= 0) {
-				short_usage("Invalid transfer buffer count, must be a positive integer: %s", optarg);
+				short_usage(argc,argv,"Invalid transfer buffer count, must be a positive integer: %s", optarg);
 				return false;
 			}
 			break;
 		case 'o':
 			handle->transfer_timeout = strtol(optarg, &endptr, 10);
 			if (*endptr != '\0' || handle->transfer_timeout <= 0) {
-				short_usage("Invalid transfer timeout, must be a positive integer: %s", optarg);
+				short_usage(argc,argv,"Invalid transfer timeout, must be a positive integer: %s", optarg);
 				return false;
 			}
+			break;
+		case 'd':
+			current_log_level = strtol(optarg, &endptr, 10);
+                        if (*endptr != '\0' || current_log_level < 0 || libusb_debug_level > 5) {
+                                short_usage(argc,argv,"Invalid log level, must be a positive integer between "
+                                            "0 and 5: %s", optarg);
+                                return false;
+                        }
 			break;
 		case 'u':
 			libusb_debug_level = strtol(optarg, &endptr, 10);
 			if (*endptr != '\0' || libusb_debug_level < 0 || libusb_debug_level > 3) {
-				short_usage("Invalid libusb debug level, must be a positive integer between "
+				short_usage(argc,argv,"Invalid libusb debug level, must be a positive integer between "
 					    "0 and 3: %s", optarg);
 				return false;
 			}
-			libusb_set_debug(handle->context, libusb_debug_level);
+			libusb_set_debug(handle->usb_context, libusb_debug_level);
 			break;
 		default:
 		case '?':
-			short_usage("Unknown argument: %c. Use %s -h for usage.", optopt, me);
+			short_usage(argc,argv,"Unknown argument: %c. Use %s -h for usage.", optopt, argv[0]);
 			return false;
 		}
 	}
 
-	if (!output_file_name) {
-		short_usage("An output file has to be specified.", optarg);
+	if (!outputfilename) {
+		short_usage(argc,argv,"An output file has to be specified.", optarg);
 		return false;
 	}
 
-	if (!sample_rate) {
-		short_usage("A sample rate has to be specified.", optarg);
+	if (!handle->sample_rate) {
+		short_usage(argc,argv,"A sample rate has to be specified.", optarg);
 		return false;
 	}
 
-	if (!n_samples) {
-		n_samples = sample_rate->samples_per_second;
+	if (!handle->n_samples_requested) {
+		handle->n_samples_requested = handle->sample_rate->samples_per_second;
 	}
 
 	return true;
 }
 
-int count = 0;
-int sum = 0;
-bool on_data_callback(uint8_t * data, size_t size, void *user_data)
-{
-	bool more = sum < 24 * 1024 * 1024;
-	size_t bytes_written = 0;
-	size_t n;
 
-	if (size == 0) {
-		more = 0;
-	}
-	log_printf(&logger, DEBUG, "Got sample: size: %zu, #samples: %d, aggregate size: %d, more: %d\n", size, count,
-		   sum, more);
-	do {
-		log_printf(&logger, DEBUG, "%i %i\n", bytes_written, n);
-		n = fwrite(&data[bytes_written], sizeof(char), size - bytes_written, output_file);
-		if (n <= 0) {
-			log_printf(&logger, WARNING, "Error while writing data to the file %s", output_file_name);
-			break;
-		}
-		bytes_written += n;
-	} while (bytes_written != size);
 
-	count++;
-	sum += size;
-	if (size == 0) {
-		printf("logic level buffer overun\n");
-		exit(EXIT_FAILURE);
+
+struct callback_test{
+	FILE * file;
+	char * filename;
+	
+};
+
+int data_callback_open(struct slogic_ctx *handle,char * openstring){
+struct callback_test *foo;
+	
+	handle->data_callback_opts = calloc(1,sizeof(struct callback_test));
+	foo = handle->data_callback_opts;
+	foo->filename = openstring;
+	if((foo->file = fopen(foo->filename,"wb")) == 0){
+		free(foo);
+		return 0;
 	}
-	return more;
+	return 1;
 }
 
-int main(int argc, char **argv)
-{
-	struct slogic_recording recording;
+int data_callback_write(struct slogic_ctx *handle, uint8_t * data, size_t size){
+struct callback_test *foo = handle->data_callback_opts;
 
-	struct slogic_handle *handle = slogic_init();
-	if (!handle) {
-		log_printf(&logger, INFO, "Failed initialise lib slogic\n");
-		exit(42);
-	}
+	//fixme, errors have to be handled here
+	return fwrite(data,1,size,foo->file);	
+}
 
-	if (!parse_args(argc, argv, handle)) {
-		exit(EXIT_FAILURE);
-	}
+void data_callback_close(struct slogic_ctx *handle){
+struct callback_test *foo = handle->data_callback_opts;
+	
+	fclose(foo->file);
+	free(foo);
+	handle->data_callback_opts = 0;
+	return ;
+}
 
-	if (slogic_open(handle) != 0) {
-		log_printf(&logger, INFO, "Failed to open the logic analyzer\n");
-		exit(EXIT_FAILURE);
-	}
+void ctrl_c_handler(int sig){
+//FIXME i dont yet have a program based struct which can handle the ctrlc	
+}
 
-	if (!slogic_is_firmware_uploaded(handle)) {
-		log_printf(&logger, INFO, "Uploading the firmware\n");
-		slogic_upload_firmware(handle);
-		slogic_close(handle);
-		return 42;
-	}
 
-	if (output_file_name) {
-		if (output_file_name[0] == '-') {
-			log_printf(&logger, DEBUG, "Using stdout\n");
-			output_file = stdout;
-		} else {
-			output_file = fopen(output_file_name, "w");
-			if (!output_file) {
-				perror("opening output file");
-				exit(EXIT_FAILURE);
-			}
 
+int main(int argc, char **argv){
+struct slogic_ctx *handle = NULL;
+	
+	do{
+		if(handle){
+			slogic_close(handle); //we must be retrying for a reason..
+		}
+		handle = slogic_init();
+		
+		//defaults 
+		handle->fwfile = "saleae-logic.firmware";
+		current_log_level = INFO;
+		handle->data_callback_open = data_callback_open;
+		handle->data_callback_write = data_callback_write;
+		handle->data_callback_close= data_callback_close;
+		
+		if (!handle) {
+			log_printf( INFO, "Failed initialise lib slogic\n");
+			exit(42);
 		}
 
+		if (!parse_args(argc, argv, handle)) {
+			exit(EXIT_FAILURE);
+		}
+
+		if (slogic_open(handle,handle->logic_index) != 0) {
+			log_printf( INFO, "Failed to open the logic analyzer\n");
+			exit(EXIT_FAILURE);
+		}
+		
+		if (!slogic_is_firmware_uploaded(handle)) {
+			log_printf( INFO, "Uploading the firmware\n");
+			ezusb_upload_firmware(handle,1 ,handle->fwfile);
+		}else{
+			handle->recording_state = INITALIZED;
+		}
+	}while(handle->recording_state != INITALIZED);
+	
+	handle->transfer_buffer_size = libusb_get_max_iso_packet_size (handle->dev, SALEAE_STREAMING_DATA_IN_ENDPOINT) * 4;
+
+	signal(SIGINT,&ctrl_c_handler);
+	
+	log_printf( DEBUG, "Transfer buffers:     %d\n", handle->n_transfer_buffers);
+	log_printf( DEBUG, "Transfer buffer size: %zu\n", handle->transfer_buffer_size);
+	log_printf( DEBUG, "Transfer timeout:     %u\n", handle->transfer_timeout);
+	log_printf( INFO, "Begin Capture\n");
+
+	if(!handle->data_callback_open(handle,outputfilename)){
+		perror("in callback open()");
 	}
-	slogic_fill_recording(&recording, sample_rate, on_data_callback, NULL);
-	if (slogic_execute_recording(handle, &recording)) {
-		slogic_close(handle);
-		exit(EXIT_FAILURE);
-	}
+
+	slogic_set_capture(handle);
+	slogic_execute_recording(handle);
+	handle->data_callback_close(handle);
+
+	log_printf( INFO, "Capture finished with exit code %d\n",handle->recording_state);
+	log_printf( NOTICE , "Total number of samples requested: %i\n", handle->n_samples_requested);
+	log_printf( NOTICE, "Total number of samples read: %i\n", handle->n_samples_fulfilled);
+	log_printf( NOTICE, "Total number of transfers: %i\n", handle->transfer_counter);
 
 	slogic_close(handle);
 

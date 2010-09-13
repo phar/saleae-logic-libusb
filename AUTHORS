@@ -1,3 +1,4 @@
 Kees Jongenburger (initial code)
 Trygve Laugstøl (initial code, gui work)
 Mike Frysinger (generalize build system)
+Mike Davis (re-org, loadable firmware, tinkering)

@@ -2,9 +2,26 @@ The code here is a libusb based implementation to access the saleae logic analyz
 You can find more information about the logic analyzer on the following website
 http://www.saleae.com/logic/. 
 
-The analyzer is capable of sampling at 24MHz but that doesn't work on all machines yet
+As I write this, the capture is working well at 8MHz on a 5,6 macbook pro... sometimes i can push it to 
+12 mhz but this is extremely unreliable.. not sure if its me, libusb or the OS, but sigrok seems to have 
+the same problem.
+
+unlike previous versions of this program, it does not have a hardcoded firmware blob and weird 
+USB capture replay foo.. and since i cannot provide saleae logic firmware under a GPL license 
+you will have to extract the firmware yourself... these directions will produce a functional fimrware
+image that can be used, you will need to download the stock saleae software from their website and extract
+the WinUSBLogicInterface.dll file from the package and run the following commands:
+
+for firmware version 1.0.33:
+	dd if=WinUSBLogicInterface.dll of=fw.hex skip=8036 count=17366 bs=1
+
+for firmware version 1.0.21:
+	dd if=USBDeviceInterface.dll of=fw.hex skip=4220 count=17366 bs=1
+
+this only seems to work for GNU objcopy, i will figure out the command line for OSX later
+	objcopy -Iihex fw.hex -Obinary saleae-logic.firmware
+
 
 Implemented features
 -firmware upload
--readbyte
 -streaming data out
