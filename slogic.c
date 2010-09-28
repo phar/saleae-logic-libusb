@@ -329,13 +329,12 @@ struct timeval timeout;
 	}
 		
 	handle->recording_state = RUNNING;
-//	slogic_set_capture(handle);
-	/* Submit all transfers */
-	slogic_set_capture_async(handle);
+
 
 	for (transfer_id = 0; transfer_id < handle->n_transfer_buffers; transfer_id++) {
-//		if(!transfer_id){
-//		}
+		if(!transfer_id){
+			slogic_set_capture_async(handle);
+		}
 		slogic_pump_data(handle, transfer_id);
 		handle->transfer_count++;
 	}
@@ -350,6 +349,10 @@ struct timeval timeout;
 	}
 
 	//spindown!
+
+
+
+
 
 	if (handle->recording_state == COMPLETED_SUCCESSFULLY) {
 		log_printf(INFO, "Capture Success!\n");

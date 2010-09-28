@@ -9,7 +9,7 @@ CFLAGS += `$(PKG_CONFIG) --cflags $(PKGS)`
 LDLIBS += `$(PKG_CONFIG) --libs $(PKGS)`
 
 PKG_CONFIG ?= pkg-config
-PKGS = libusb-1.0
+PKGS = libusb-1.0 zlib
 
 INDENT ?= indent
 

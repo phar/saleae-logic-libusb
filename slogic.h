@@ -4,10 +4,25 @@
 #include <libusb.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <zlib.h>
 
 
-#define DEFAULT_N_TRANSFER_BUFFERS 100
-#define DEFAULT_TRANSFER_BUFFER_SIZE 1024//(4 * 1024)
+#define SLOGIC_COMPRESS_LEVEL 9
+#define CHUNK  4096
+
+#if defined(MSDOS) || defined(OS2) || defined(WIN32) || defined(__CYGWIN__)
+#  include <fcntl.h>
+#  include <io.h>
+#  define SET_BINARY_MODE(file) setmode(fileno(file), O_BINARY)
+#else
+#  define SET_BINARY_MODE(file)
+#endif
+
+
+#define DEFAULT_N_TRANSFER_BUFFERS 4096
+#define DEFAULT_TRANSFER_BUFFER_SIZE 4096 //(4 * 1024)
 #define DEFAULT_TRANSFER_TIMEOUT 1000
 
 /*
@@ -92,7 +107,7 @@ typedef struct slogic_ctx {
 	size_t						transfer_buffer_size;
 
 	//output stuff
-	int							(*data_callback_open)(struct slogic_ctx *handle,char * openstring);
+	int						(*data_callback_open)(struct slogic_ctx *handle,char * openstring);
 	size_t						(*data_callback_write)(struct slogic_ctx *handle, uint8_t * data, size_t size);
 	void						(*data_callback_close)(struct slogic_ctx *handle);	
 	void						*data_callback_opts;	
@@ -102,7 +117,7 @@ typedef struct slogic_ctx {
 	unsigned int				transfer_count;
 	unsigned int				transfer_counter;
 	struct logic_transfers		*transfers;
-	
+	z_stream 			strm;
 }slogic_ctx;
 
 struct slogic_ctx *slogic_init();

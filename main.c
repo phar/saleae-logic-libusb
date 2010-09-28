@@ -21,8 +21,8 @@ char *outputfilename = "saleae_output.bin";
 
 
 void short_usage(int argc, char **argv,const char *message, ...){
-	char p[1024]; //FIXME
-	va_list ap;
+char p[1024];
+va_list ap;
 
 	printf( "usage: %s -f <output file> -r <sample rate> [-n <number of samples>] [-h ] \n\n", argv[0]);
 	va_start(ap, message);
@@ -32,7 +32,7 @@ void short_usage(int argc, char **argv,const char *message, ...){
 }
 
 void full_usage(int argc, char **argv){
-	const struct slogic_sample_rate *sample_iterator = slogic_get_sample_rates();
+const struct slogic_sample_rate *sample_iterator = slogic_get_sample_rates();
 
 	printf( "usage: %s -f <output file> -r <sample rate> [-n <number of samples>]\n", argv[0]);
 	printf( "\n");
@@ -177,6 +177,14 @@ struct callback_test *foo;
 	handle->data_callback_opts = calloc(1,sizeof(struct callback_test));
 	foo = handle->data_callback_opts;
 	foo->filename = openstring;
+
+	handle->strm.zalloc = Z_NULL;
+	handle->strm.zfree = Z_NULL;
+	handle->strm.opaque = Z_NULL;
+    	if(deflateInit(&handle->strm, SLOGIC_COMPRESS_LEVEL) != Z_OK){
+		return -1;
+	}
+
 	if((foo->file = fopen(foo->filename,"wb")) == 0){
 		free(foo);
 		return 0;
@@ -184,16 +192,43 @@ struct callback_test *foo;
 	return 1;
 }
 
-int data_callback_write(struct slogic_ctx *handle, uint8_t * data, size_t size){
+size_t data_callback_write(struct slogic_ctx *handle, uint8_t * data, size_t size){
 struct callback_test *foo = handle->data_callback_opts;
+unsigned int have;
+char * out;
+int ret;
 
-	//fixme, errors have to be handled here
-	//return fwrite(data,1,size,foo->file);	
+	if(!(out = malloc(size + 1024))){
+		perror("data_callbac_write");
+		exit(0); 
+	}
+	assert(out);
+	handle->strm.avail_in = size;
+	handle->strm.next_in = data;
+	do {
+            handle->strm.avail_out = (unsigned int)CHUNK;
+            handle->strm.next_out = out;
+            ret = deflate(&handle->strm, Z_NO_FLUSH);    /* no bad return value */
+            assert(ret != Z_STREAM_ERROR);  /* state not clobbered */
+            have = CHUNK - handle->strm.avail_out;
+            if (fwrite(out, 1, have, foo->file) != have || ferror(foo->file)) {
+                (void)deflateEnd(&handle->strm);
+                return Z_ERRNO;
+            }
+        } while(handle->strm.avail_out == 0);
+
+	free(out);
+	return size;
+
+//	return fwrite(data,1,size,foo->file);	
+
 }
 
 void data_callback_close(struct slogic_ctx *handle){
 struct callback_test *foo = handle->data_callback_opts;
 	
+
+	deflateEnd(&handle->strm);
 	fclose(foo->file);
 	free(foo);
 	handle->data_callback_opts = 0;
@@ -262,6 +297,8 @@ struct slogic_ctx *handle = NULL;
 
 	//slogic_set_capture(handle);
 	slogic_execute_recording(handle);
+	
+	
 	handle->data_callback_close(handle);
 
 	log_printf( INFO, "Capture finished with exit code %d\n",handle->recording_state);
